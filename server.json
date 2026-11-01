@@ -3,7 +3,7 @@
   "name": "io.github.yarenty/emperor-folder",
   "title": "emperor-folder",
   "description": "List, read, search and (opt-in) write, edit and move files inside one folder, never outside it.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "repository": {
     "url": "https://github.com/yarenty/emperor-folder",
     "source": "github"
@@ -13,7 +13,7 @@
     {
       "registryType": "cargo",
       "identifier": "emperor-folder",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "transport": {
         "type": "stdio"
       },
@@ -22,13 +22,15 @@
           "type": "positional",
           "value": "serve",
           "valueHint": "serve",
-          "description": "Run the MCP server."
+          "description": "Run the MCP server.",
+          "isRequired": true
         },
         {
           "type": "positional",
           "value": "--stdio",
           "valueHint": "stdio",
-          "description": "Speak MCP over stdin/stdout."
+          "description": "Speak MCP over stdin/stdout.",
+          "isRequired": true
         },
         {
           "type": "named",
@@ -40,11 +42,21 @@
           "placeholder": "/path/to/folder"
         },
         {
-          "type": "named",
-          "name": "--writable",
-          "description": "Switch without a value: also offer the write, edit and move tools (default: read-only).",
+          "type": "positional",
+          "value": "--writable",
+          "valueHint": "writable",
+          "description": "Switch: also offer the write, edit and move tools (default: read-only). FOLDER_WRITABLE=true does the same.",
+          "isRequired": false
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "FOLDER_WRITABLE",
+          "description": "true, 1 or yes also offers the write, edit and move tools; unset, empty, false, 0 or no keep the server read-only.",
           "isRequired": false,
-          "format": "boolean"
+          "isSecret": false,
+          "format": "boolean",
+          "default": "false"
         }
       ]
     }

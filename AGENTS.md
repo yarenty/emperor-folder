@@ -1,6 +1,6 @@
 # emperor-folder — AI agent notes
 
-**Crate**: `emperor-folder` · **Version**: 0.1.1 · **Licence**: MIT OR Apache-2.0 · **Rust**: 1.88+ (`rust-version` in `Cargo.toml`)
+**Crate**: `emperor-folder` · **Version**: 0.1.2 · **Licence**: MIT OR Apache-2.0 · **Rust**: 1.88+ (`rust-version` in `Cargo.toml`)
 
 ## Scope
 
@@ -8,7 +8,7 @@ A standalone **MCP server confined to one root folder (or several named ones)**,
 [`emperor-mcp`](https://github.com/yarenty/emperor-mcp) (rmcp underneath). Seven tools: `list`,
 `read`, `search`, `stat`, and with `--writable` also `write`, `edit`, `move`. Streamable HTTP via
 `emperor_mcp::serve` (stateless, `/mcp` + `/health`), stdio via rmcp for desktop clients.
-Read-only unless started with `--writable`.
+Read-only unless started with `--writable` (or `FOLDER_WRITABLE=true`).
 
 Layout (one package, library + binary):
 

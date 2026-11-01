@@ -4,6 +4,17 @@ All notable changes to emperor-folder. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-01
+
+### Added
+- `FOLDER_WRITABLE` environment variable for `--writable`: `true`, `1` or `yes` turn writing on; unset, empty, `false`, `0` or `no` leave the server read-only. Container catalogs that can only set environment variables can now offer writing.
+- `server.json` lists `FOLDER_WRITABLE`.
+- CI builds the container image on amd64 and arm64 and checks it answers `initialize` and `tools/list` over stdio, read-only and writable.
+
+### Changed
+- The startup log and `doctor` say whether writing is on.
+- `server.json`: `serve` and `--stdio` marked required; `--writable` is a fixed positional switch, so clients no longer pass it a value.
+
 ## [0.1.1] - 2026-11-01
 
 ### Added

@@ -1,6 +1,6 @@
 [package]
 name = "emperor-folder"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.88"
 description = "MCP server confined to one folder: list, read, search, stat, write, edit and move files, never outside the root"
@@ -33,7 +33,7 @@ regex = "1"
 # Image content for `read` (already in the tree through rmcp)
 base64 = "0.23"
 
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

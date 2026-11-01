@@ -49,6 +49,7 @@ Or as a container (stdio, the folder mounted at `/data`, read-only unless you ad
 docker build -t emperor-folder https://github.com/yarenty/emperor-folder.git
 docker run -i --rm -v ~/notes:/data emperor-folder                            # read-only
 docker run -i --rm -v ~/notes:/data emperor-folder --root /data --writable    # also write, edit, move
+docker run -i --rm -v ~/notes:/data -e FOLDER_WRITABLE=true emperor-folder     # the same, from the environment
 ```
 
 ## Run
@@ -62,7 +63,7 @@ emperor-folder serve  --root ~/notes
 |---|---|---|
 | `--root [NAME=]DIR` | (required) | A folder the server can see. Repeat for several roots; `NAME=` names one (default: the folder's own name). See [Several roots](#several-roots). |
 | `--bind ADDR` | `127.0.0.1:8031` | Streamable HTTP address; MCP endpoint at `/mcp`, liveness at `/health`. |
-| `--writable` | off | Offer `write`, `edit` and `move`. Without it they are not listed at all. |
+| `--writable` | off | Offer `write`, `edit` and `move`. Without it they are not listed at all. Also set by the environment variable `FOLDER_WRITABLE`: `true`, `1` or `yes` (also `on`) turn it on; unset, empty, `false`, `0` or `no` (also `off`) leave it off; anything else is refused. |
 | `--stdio` | off | Speak MCP over stdin/stdout instead of HTTP. Logs go to stderr. |
 | `--hidden` | off | Include hidden files and directories in `list` and `search`. |
 | `--no-ignore` | off | Do not honour `.gitignore`, `.ignore` and git exclude files. |
@@ -214,9 +215,10 @@ because every operation re-resolves beneath the root.
 
 ```
 $ emperor-folder doctor --root ~/notes --writable
-emperor-folder 0.1.1 doctor
+emperor-folder 0.1.2 doctor
   [ok  ] dir /Users/me/notes  readable (42 entries)
   [ok  ] dir /Users/me/notes  writable
+  [ok  ] write access         on: write, edit and move are offered
   [ok  ] roots                notes = /Users/me/notes
   [ok  ] listen address       127.0.0.1:8031 is free
   [ok  ] tool budget          7 of at most 8 tools
@@ -225,7 +227,7 @@ all good (0 warning(s))
 ```
 
 It checks each root exists and can be listed, can be written when `--writable` is set (a probe
-file is created and removed), the roots open and have distinct names, the listen address is free (skipped
+file is created and removed), says whether writing is on, the roots open and have distinct names, the listen address is free (skipped
 with `--stdio`), the tool count is within the emperor-mcp budget, and counts the files the
 walker sees (a warning above 100 000: listing and search get slow). Exit code 0 when nothing
 failed, 1 otherwise, so scripts and container health checks can use it.
