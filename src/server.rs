@@ -1,13 +1,18 @@
-//! The MCP surface: six tools over one [`Folder`], served over Streamable HTTP (emperor-mcp) or
-//! stdio (rmcp).
+//! The MCP surface: seven tools over one [`Folder`], served over Streamable HTTP (emperor-mcp)
+//! or stdio (rmcp).
 //!
-//! File content is framed [`FrameKind::TrustedReference`]; structured results (listings,
-//! matches, metadata) are JSON framed [`FrameKind::Computed`]. Refusals come back as tool errors
-//! (`isError: true`) with a message the model can act on.
+//! File content is framed [`FrameKind::Document`] (a file's author is not known); structured
+//! results (listings, matches, metadata) are JSON framed [`FrameKind::Computed`]; small images
+//! come back as MCP image content. Refusals come back as tool errors (`isError: true`) with a
+//! message the model can act on.
+//!
+//! On a read-only server the mutating tools (`write`, `edit`, `move`) are removed from the tool
+//! router at construction, so `tools/list` does not offer them at all.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use base64::Engine;
 use emperor_mcp::{FrameKind, ServeOptions, frame};
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
@@ -21,17 +26,16 @@ use crate::folder::{Folder, ReadOutput, WriteMode};
 /// Server name reported to clients and by `doctor`.
 pub const SERVER_NAME: &str = "emperor-folder";
 
-const INSTRUCTIONS: &str = "Files in one folder. Every path is relative to that folder; \
-absolute paths and `..` are refused. list and search skip hidden and .gitignored files. \
-write and move work only when the operator started the server with --writable.";
+/// Tools that change files; offered only when the server is writable.
+pub const WRITE_TOOLS: [&str; 3] = ["write", "edit", "move"];
 
 /// Arguments of `list`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ListArgs {
-    /// Directory relative to the root folder; omit or "." for the root.
+    /// Directory to list; omit or "." for the top.
     #[serde(default)]
     pub path: Option<String>,
-    /// Glob on root-relative paths, e.g. "*.md" or "src/**/*.rs".
+    /// Glob on paths as shown, e.g. "*.md" or "src/**/*.rs".
     #[serde(default)]
     pub glob: Option<String>,
     /// Include subdirectories (default false: one level).
@@ -45,7 +49,7 @@ pub struct ListArgs {
 /// Arguments of `read`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ReadArgs {
-    /// File relative to the root folder.
+    /// File to read.
     pub path: String,
     /// First line to return, 1-based (default 1).
     #[serde(default)]
@@ -60,10 +64,10 @@ pub struct ReadArgs {
 pub struct SearchArgs {
     /// Regular expression (Rust regex syntax) matched against each line.
     pub pattern: String,
-    /// Directory or file to search, relative to the root; omit for the whole folder.
+    /// Directory or file to search; omit for everything.
     #[serde(default)]
     pub path: Option<String>,
-    /// Glob on root-relative paths, e.g. "*.rs".
+    /// Glob on paths as shown, e.g. "*.rs".
     #[serde(default)]
     pub glob: Option<String>,
     /// Match case-insensitively (default false).
@@ -74,7 +78,7 @@ pub struct SearchArgs {
 /// Arguments of `write`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct WriteArgs {
-    /// File relative to the root folder; parent directories are created.
+    /// File to write; parent directories are created.
     pub path: String,
     /// Text to write.
     pub content: String,
@@ -83,12 +87,26 @@ pub struct WriteArgs {
     pub mode: WriteMode,
 }
 
+/// Arguments of `edit`.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct EditArgs {
+    /// Text file to change.
+    pub path: String,
+    /// Exact text to replace, whitespace included; must occur exactly once unless replace_all.
+    pub old_text: String,
+    /// Replacement text (may be empty to delete old_text).
+    pub new_text: String,
+    /// Replace every occurrence (default false).
+    #[serde(default)]
+    pub replace_all: bool,
+}
+
 /// Arguments of `move`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MoveArgs {
-    /// Existing file or directory, relative to the root.
+    /// Existing file or directory.
     pub from: String,
-    /// New path, relative to the root; parent directories are created.
+    /// New path; parent directories are created.
     pub to: String,
     /// Replace an existing target (default false).
     #[serde(default)]
@@ -98,7 +116,7 @@ pub struct MoveArgs {
 /// Arguments of `stat`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct StatArgs {
-    /// Path relative to the root folder; "." for the root.
+    /// Path to describe; "." for the top.
     pub path: String,
 }
 
@@ -107,26 +125,48 @@ pub struct StatArgs {
 pub struct FolderServer {
     folder: Arc<Folder>,
     tool_router: ToolRouter<Self>,
+    instructions: String,
 }
 
 #[tool_router]
 impl FolderServer {
-    /// A server over `folder`.
+    /// A server over `folder`. Without `--writable`, `write`, `edit` and `move` are not
+    /// registered.
     pub fn new(folder: Arc<Folder>) -> Self {
+        let writable = folder.config().writable;
+        let instructions = instructions(&folder);
         Self {
             folder,
-            tool_router: Self::tool_router(),
+            tool_router: Self::router(writable),
+            instructions,
         }
     }
 
+    /// The tool router for a writable or read-only server.
+    pub fn router(writable: bool) -> ToolRouter<Self> {
+        let mut router = Self::tool_router();
+        if !writable {
+            for name in WRITE_TOOLS {
+                router.remove_route(name);
+            }
+        }
+        router
+    }
+
     /// Number of tools the server exposes (for `doctor`'s tool budget).
-    pub fn tool_count() -> usize {
-        Self::tool_router().list_all().len()
+    pub fn tool_count(writable: bool) -> usize {
+        Self::router(writable).list_all().len()
     }
 
     #[tool(
         name = "list",
-        description = "List files and directories in a folder (root-relative). Skips hidden and .gitignored entries. Optional glob filter; recursive for subfolders."
+        description = "List files and directories in a folder. Skips hidden and .gitignored entries. Optional glob filter; recursive for subfolders.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn list(&self, Parameters(a): Parameters<ListArgs>) -> CallToolResult {
         let path = a.path.unwrap_or_default();
@@ -138,7 +178,13 @@ impl FolderServer {
 
     #[tool(
         name = "read",
-        description = "Read a text file (root-relative path), optionally only lines start_line..end_line (1-based, inclusive). Binary files are reported, not returned."
+        description = "Read a text file, optionally only lines start_line..end_line (1-based, inclusive). Small PNG, JPEG, GIF and WebP images come back as images; other binary files are reported, not returned.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn read(&self, Parameters(a): Parameters<ReadArgs>) -> CallToolResult {
         match self
@@ -152,16 +198,29 @@ impl FolderServer {
                 last_line,
                 total_lines,
                 truncated,
+                partial_last_line,
             }) => {
                 let total = total_lines.map_or_else(|| "?".to_string(), |n| n.to_string());
                 let mut header = format!("{path} lines {first_line}-{last_line} of {total}");
                 if truncated {
-                    header.push_str(" (cut at the size limit)");
+                    let next = if partial_last_line {
+                        last_line
+                    } else {
+                        last_line + 1
+                    };
+                    header.push_str(&format!(
+                        " (cut at the size limit; continue with start_line {next})"
+                    ));
                 }
-                text(frame(
-                    FrameKind::TrustedReference,
-                    &format!("{header}\n{content}"),
-                ))
+                text(frame(FrameKind::Document, &format!("{header}\n{content}")))
+            }
+            Ok(ReadOutput::Image { path, mime, data }) => {
+                let about = serde_json::json!({ "path": path, "mime": mime, "size": data.len() });
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
+                CallToolResult::success(vec![
+                    ContentBlock::text(frame(FrameKind::Computed, &about.to_string())),
+                    ContentBlock::image(b64, mime),
+                ])
             }
             Ok(ReadOutput::Binary { path, size }) => computed(Ok(serde_json::json!({
                 "path": path,
@@ -175,7 +234,13 @@ impl FolderServer {
 
     #[tool(
         name = "search",
-        description = "Search text files for a regular expression; returns path, line number and line for each match. Optional start path, glob filter, ignore_case."
+        description = "Search text files for a regular expression; returns path, line number and line for each match. Optional start path, glob filter, ignore_case.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn search(&self, Parameters(a): Parameters<SearchArgs>) -> CallToolResult {
         let path = a.path.unwrap_or_default();
@@ -187,7 +252,13 @@ impl FolderServer {
 
     #[tool(
         name = "write",
-        description = "Write text to a file (root-relative path). mode: create (default, fails if it exists), overwrite, or append. Creates parent directories."
+        description = "Write text to a file. mode: create (default, fails if it exists), overwrite, or append. Creates parent directories.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn write(&self, Parameters(a): Parameters<WriteArgs>) -> CallToolResult {
         computed(
@@ -197,8 +268,31 @@ impl FolderServer {
     }
 
     #[tool(
+        name = "edit",
+        description = "Replace exact text in a text file: old_text must occur exactly once (copy it from read, whitespace included) unless replace_all is true.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn edit(&self, Parameters(a): Parameters<EditArgs>) -> CallToolResult {
+        computed(
+            self.run(move |f| f.edit(&a.path, &a.old_text, &a.new_text, a.replace_all))
+                .await,
+        )
+    }
+
+    #[tool(
         name = "move",
-        description = "Move or rename a file or directory inside the root folder. Refuses to replace an existing target unless overwrite is true."
+        description = "Move or rename a file or directory. Refuses to replace an existing target unless overwrite is true.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
     )]
     async fn move_entry(&self, Parameters(a): Parameters<MoveArgs>) -> CallToolResult {
         computed(
@@ -209,7 +303,13 @@ impl FolderServer {
 
     #[tool(
         name = "stat",
-        description = "Describe a path: kind (file, dir, symlink), size, modified time, and line count for text files."
+        description = "Describe a path: kind (file, dir, symlink), size, modified time, line count for text files, image type for images.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn stat(&self, Parameters(a): Parameters<StatArgs>) -> CallToolResult {
         computed(self.run(move |f| f.stat(&a.path)).await)
@@ -235,8 +335,33 @@ impl ServerHandler for FolderServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(SERVER_NAME, env!("CARGO_PKG_VERSION")))
-            .with_instructions(INSTRUCTIONS)
+            .with_instructions(self.instructions.clone())
     }
+}
+
+/// The instructions sent at `initialize`: how paths work and whether files can be changed.
+fn instructions(folder: &Folder) -> String {
+    let names: Vec<&str> = folder.roots().map(|(name, _)| name).collect();
+    let paths = if names.len() == 1 {
+        "Files in one folder. Every path is relative to that folder".to_string()
+    } else {
+        format!(
+            "Files in {} folders: {}. Every path starts with one of those names (e.g. {}/notes.md); \
+list \".\" shows them",
+            names.len(),
+            names.join(", "),
+            names[0]
+        )
+    };
+    let access = if folder.config().writable {
+        "write creates or replaces a file, edit replaces exact text in one, move renames."
+    } else {
+        "The server is read-only: no tool changes files."
+    };
+    format!(
+        "{paths}; absolute paths and `..` are refused. list and search skip hidden and \
+.gitignored files. {access}"
+    )
 }
 
 fn text(body: String) -> CallToolResult {
@@ -272,12 +397,7 @@ pub fn default_allowed_hosts(bind: SocketAddr) -> Vec<String> {
 }
 
 /// Serve over stateless Streamable HTTP at `/mcp` (plus `/health`) until Ctrl-C.
-pub async fn serve_http(
-    folder: Arc<Folder>,
-    bind: SocketAddr,
-    allowed_hosts: Vec<String>,
-) -> anyhow::Result<()> {
-    let options = ServeOptions::new(bind).with_allowed_hosts(allowed_hosts);
+pub async fn serve_http(folder: Arc<Folder>, options: ServeOptions) -> anyhow::Result<()> {
     emperor_mcp::serve(options, move || FolderServer::new(Arc::clone(&folder))).await
 }
 
@@ -295,8 +415,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exactly_six_tools() {
-        assert_eq!(FolderServer::tool_count(), 6);
+    fn seven_tools_writable_four_read_only() {
+        assert_eq!(FolderServer::tool_count(true), 7);
+        assert_eq!(FolderServer::tool_count(false), 4);
+        let ro = FolderServer::router(false);
+        assert!(WRITE_TOOLS.iter().all(|t| !ro.has_route(t)));
+    }
+
+    #[test]
+    fn tools_conform_in_both_modes() {
+        emperor_mcp::testkit::assert_tools(&FolderServer::router(true).list_all());
+        emperor_mcp::testkit::assert_tools(&FolderServer::router(false).list_all());
     }
 
     #[test]

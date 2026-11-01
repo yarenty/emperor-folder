@@ -1,75 +1,54 @@
-//! `emperor-folder doctor`: checks the root folder, the listen address and the tool budget
+//! `emperor-folder doctor`: checks the root folders, the listen address and the tool budget
 //! before the server is started.
 
 use std::net::SocketAddr;
 
-use emperor_mcp::doctor::{Check, Report, port_free, tool_budget};
+use emperor_mcp::doctor::{Check, Report, dir_readable, dir_writable, port_free, tool_budget};
 
 use crate::folder::{Config, Folder};
 use crate::server::{FolderServer, SERVER_NAME};
 
-/// Above this many files under the root, `doctor` warns: listing and search get slow.
+/// Above this many files under the roots, `doctor` warns: listing and search get slow.
 pub const FILE_COUNT_WARN: usize = 100_000;
 
 /// Build the report. `bind` is `None` for stdio (no port to check).
 pub fn report(config: &Config, bind: Option<SocketAddr>) -> Report {
     let mut report = Report::new(SERVER_NAME, env!("CARGO_PKG_VERSION"));
-    let shown = config
-        .root
-        .canonicalize()
-        .unwrap_or_else(|_| config.root.clone())
-        .display()
-        .to_string();
 
-    match std::fs::metadata(&config.root) {
-        Ok(md) if md.is_dir() => {
-            report.push(Check::pass("root folder", shown.clone()));
-        }
-        Ok(_) => {
-            report.push(Check::fail(
-                "root folder",
-                format!("{shown} is not a directory"),
-            ));
-        }
-        Err(e) => {
-            report.push(Check::fail("root folder", format!("{shown}: {e}")));
+    for spec in &config.roots {
+        report.push(dir_readable(&spec.path));
+        if config.writable {
+            report.push(dir_writable(&spec.path));
         }
     }
-
-    let folder = match Folder::open(config.clone()) {
-        Ok(f) => match f.dir().entries() {
-            Ok(_) => {
-                report.push(Check::pass("read access", "root can be opened and listed"));
-                Some(f)
-            }
-            Err(e) => {
-                report.push(Check::fail("read access", format!("cannot list root: {e}")));
-                None
-            }
-        },
-        Err(e) => {
-            report.push(Check::fail("read access", e.to_string()));
-            None
-        }
-    };
-
     if !config.writable {
         report.push(Check::pass(
             "write access",
-            "read-only (write and move answer an error; --writable enables them)",
+            "read-only: write, edit and move are not offered (--writable enables them)",
         ));
-    } else if let Some(f) = &folder {
-        report.push(write_probe(f));
-    } else {
-        report.push(Check::fail("write access", "root cannot be opened"));
     }
+
+    let folder = match Folder::open(config.clone()) {
+        Ok(f) => {
+            let roots: Vec<String> = f
+                .roots()
+                .map(|(name, path)| format!("{name} = {}", path.display()))
+                .collect();
+            report.push(Check::pass("roots", roots.join(", ")));
+            Some(f)
+        }
+        Err(e) => {
+            report.push(Check::fail("roots", e.to_string()));
+            None
+        }
+    };
 
     match bind {
         Some(addr) => report.push(port_free(addr)),
         None => report.push(Check::pass("listen address", "stdio, no port")),
     };
 
-    report.push(tool_budget(FolderServer::tool_count()));
+    report.push(tool_budget(FolderServer::tool_count(config.writable)));
 
     if let Some(f) = &folder {
         let n = f.count_files(FILE_COUNT_WARN);
@@ -77,26 +56,14 @@ pub fn report(config: &Config, bind: Option<SocketAddr>) -> Report {
             Check::warn(
                 "files",
                 format!(
-                    "more than {FILE_COUNT_WARN} files under the root; list and search will be slow, consider a narrower root"
+                    "more than {FILE_COUNT_WARN} files under the roots; list and search will be slow, consider a narrower root"
                 ),
             )
         } else {
-            Check::pass("files", format!("{n} visible files under the root"))
+            Check::pass("files", format!("{n} visible files under the roots"))
         });
     }
     report
-}
-
-/// Create and remove a probe file through the capability handle.
-fn write_probe(folder: &Folder) -> Check {
-    let name = format!(".emperor-folder-doctor-{}", std::process::id());
-    match folder.dir().write(&name, b"probe") {
-        Ok(()) => {
-            let _ = folder.dir().remove_file(&name);
-            Check::pass("write access", "probe file created and removed")
-        }
-        Err(e) => Check::fail("write access", format!("cannot write in root: {e}")),
-    }
 }
 
 #[cfg(test)]
@@ -109,5 +76,20 @@ mod tests {
         let r = report(&Config::new("/definitely/not/here/emperor-folder"), None);
         assert!(!r.is_ok());
         assert_eq!(r.checks()[0].status, Status::Fail);
+    }
+
+    #[test]
+    fn duplicate_root_names_fail() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let config = Config::new(a.path())
+            .root("x", b.path())
+            .root("x", a.path());
+        let r = report(&config, None);
+        assert!(
+            r.checks()
+                .iter()
+                .any(|c| c.name == "roots" && c.status == Status::Fail)
+        );
     }
 }

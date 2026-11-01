@@ -1,11 +1,11 @@
-//! The six tools end to end over real Streamable HTTP: a server on a free port, a temporary
+//! The seven tools end to end over real Streamable HTTP: a server on a free port, a temporary
 //! root folder on disk, JSON-RPC requests from reqwest.
 
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use emperor_folder::{Config, Folder, default_allowed_hosts, serve_http};
+use emperor_folder::{Config, Folder, ServeOptions, default_allowed_hosts, serve_http};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -47,18 +47,21 @@ fn fixture(root: &Path) {
 async fn start(configure: impl FnOnce(Config) -> Config) -> Server {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path());
-    let folder = Folder::open(configure(Config::new(root.path()))).unwrap();
+    let base = serve(configure(Config::new(root.path())), |o| o).await;
+    Server { base, root }
+}
+
+/// Serve `config` on a free loopback port; returns the base URL.
+async fn serve(config: Config, options: impl FnOnce(ServeOptions) -> ServeOptions) -> String {
+    let folder = Folder::open(config).unwrap();
     let port = free_port();
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-    tokio::spawn(serve_http(
-        Arc::new(folder),
-        addr,
-        default_allowed_hosts(addr),
-    ));
+    let opts = options(ServeOptions::new(addr).with_allowed_hosts(default_allowed_hosts(addr)));
+    tokio::spawn(serve_http(Arc::new(folder), opts));
     let base = format!("http://{addr}");
     for _ in 0..100 {
         if reqwest::get(format!("{base}/health")).await.is_ok() {
-            return Server { base, root };
+            return base;
         }
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
     }
@@ -87,8 +90,13 @@ async fn rpc(base: &str, body: Value) -> Value {
 
 /// Call a tool; returns (is_error, text).
 async fn call(s: &Server, tool: &str, args: Value) -> (bool, String) {
+    call_at(&s.base, tool, args).await
+}
+
+/// Call a tool on the server at `base`; returns (is_error, text).
+async fn call_at(base: &str, tool: &str, args: Value) -> (bool, String) {
     let v = rpc(
-        &s.base,
+        base,
         json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
                "params":{"name":tool,"arguments":args}}),
     )
@@ -118,26 +126,48 @@ fn paths(v: &Value, key: &str) -> Vec<String> {
         .collect()
 }
 
-#[tokio::test]
-async fn tools_list_returns_exactly_six_tools() {
-    let s = start(|c| c).await;
-    let v = rpc(
-        &s.base,
-        json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}),
-    )
-    .await;
-    let mut names: Vec<&str> = v["result"]["tools"]
+async fn tool_names(base: &str) -> (Value, Vec<String>) {
+    let v = rpc(base, json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).await;
+    let mut names: Vec<String> = v["result"]["tools"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|t| t["name"].as_str().unwrap())
+        .map(|t| t["name"].as_str().unwrap().to_string())
         .collect();
     names.sort();
+    (v, names)
+}
+
+#[tokio::test]
+async fn read_only_server_lists_four_tools_writable_seven() {
+    let s = start(|c| c).await;
+    let (v, names) = tool_names(&s.base).await;
+    assert_eq!(names, ["list", "read", "search", "stat"], "{v}");
+    emperor_mcp::testkit::assert_tools_json(&v);
+
+    let w = start(|c| c.writable(true)).await;
+    let (v, names) = tool_names(&w.base).await;
     assert_eq!(
         names,
-        ["list", "move", "read", "search", "stat", "write"],
+        ["edit", "list", "move", "read", "search", "stat", "write"],
         "{v}"
     );
+    emperor_mcp::testkit::assert_tools_json(&v);
+}
+
+#[tokio::test]
+async fn annotations_mark_read_only_and_destructive_tools() {
+    let s = start(|c| c.writable(true)).await;
+    let (v, _) = tool_names(&s.base).await;
+    for tool in v["result"]["tools"].as_array().unwrap() {
+        let name = tool["name"].as_str().unwrap();
+        let a = &tool["annotations"];
+        let writes = ["write", "edit", "move"].contains(&name);
+        assert_eq!(a["readOnlyHint"], !writes, "{name}: {a}");
+        assert_eq!(a["destructiveHint"], writes, "{name}: {a}");
+        assert_eq!(a["idempotentHint"], !writes, "{name}: {a}");
+        assert_eq!(a["openWorldHint"], false, "{name}: {a}");
+    }
 }
 
 #[tokio::test]
@@ -193,8 +223,8 @@ async fn read_whole_file_and_line_ranges() {
     let (err, text) = call(&s, "read", json!({"path": "a.txt"})).await;
     assert!(!err, "{text}");
     assert!(
-        text.contains("internal knowledge base"),
-        "TrustedReference frame: {text}"
+        text.contains("content of a document or file"),
+        "Document frame: {text}"
     );
     assert!(text.contains("a.txt lines 1-5 of 5"), "{text}");
     assert!(text.contains("alpha") && text.contains("epsilon"));
@@ -443,15 +473,321 @@ async fn stat_describes_files_and_dirs() {
 }
 
 #[tokio::test]
-async fn read_only_by_default_refuses_write_and_move() {
+async fn read_only_server_does_not_offer_write_edit_or_move() {
     let s = start(|c| c).await;
-    let (err, text) = call(&s, "write", json!({"path": "x.txt", "content": "x"})).await;
-    assert!(err && text.contains("read-only"), "{text}");
-    assert!(!s.path("x.txt").exists());
+    for (tool, args) in [
+        ("write", json!({"path": "x.txt", "content": "x"})),
+        (
+            "edit",
+            json!({"path": "a.txt", "old_text": "alpha", "new_text": "x"}),
+        ),
+        ("move", json!({"from": "a.txt", "to": "b.txt"})),
+    ] {
+        let v = rpc(
+            &s.base,
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+                   "params":{"name":tool,"arguments":args}}),
+        )
+        .await;
+        let refused = v.get("error").is_some() || v["result"]["isError"] == true;
+        assert!(refused, "{tool} must not run on a read-only server: {v}");
+    }
+    assert!(!s.path("x.txt").exists() && !s.path("b.txt").exists());
+    assert!(
+        fs::read_to_string(s.path("a.txt"))
+            .unwrap()
+            .starts_with("alpha")
+    );
+}
 
-    let (err, text) = call(&s, "move", json!({"from": "a.txt", "to": "b.txt"})).await;
-    assert!(err && text.contains("read-only"), "{text}");
-    assert!(s.path("a.txt").exists() && !s.path("b.txt").exists());
+#[tokio::test]
+async fn edit_replaces_exactly_one_occurrence_or_all() {
+    let s = start(|c| c.writable(true)).await;
+    fs::write(s.path("e.txt"), "one two one\nthree\n").unwrap();
+
+    let (err, text) = call(
+        &s,
+        "edit",
+        json!({"path": "e.txt", "old_text": "one", "new_text": "1"}),
+    )
+    .await;
+    assert!(err && text.contains("occurs 2 times"), "{text}");
+    assert!(text.contains("replace_all"), "{text}");
+    assert_eq!(
+        fs::read_to_string(s.path("e.txt")).unwrap(),
+        "one two one\nthree\n"
+    );
+
+    let (err, text) = call(
+        &s,
+        "edit",
+        json!({"path": "e.txt", "old_text": "two", "new_text": "2"}),
+    )
+    .await;
+    assert!(!err, "{text}");
+    assert_eq!(payload(&text)["replacements"], 1);
+    assert_eq!(
+        fs::read_to_string(s.path("e.txt")).unwrap(),
+        "one 2 one\nthree\n"
+    );
+
+    let (err, text) = call(
+        &s,
+        "edit",
+        json!({"path": "e.txt", "old_text": "one", "new_text": "1", "replace_all": true}),
+    )
+    .await;
+    assert!(!err, "{text}");
+    assert_eq!(payload(&text)["replacements"], 2);
+    assert_eq!(
+        fs::read_to_string(s.path("e.txt")).unwrap(),
+        "1 2 1\nthree\n"
+    );
+
+    let (err, text) = call(
+        &s,
+        "edit",
+        json!({"path": "e.txt", "old_text": "missing", "new_text": "x"}),
+    )
+    .await;
+    assert!(err && text.contains("not found"), "{text}");
+
+    let (err, text) = call(
+        &s,
+        "edit",
+        json!({"path": "e.txt", "old_text": "", "new_text": "x"}),
+    )
+    .await;
+    assert!(err && text.contains("empty"), "{text}");
+
+    let (err, text) = call(
+        &s,
+        "edit",
+        json!({"path": "blob.bin", "old_text": "TODO", "new_text": "x"}),
+    )
+    .await;
+    assert!(err && text.contains("binary"), "{text}");
+
+    let (err, text) = call(
+        &s,
+        "edit",
+        json!({"path": "nope.txt", "old_text": "a", "new_text": "b"}),
+    )
+    .await;
+    assert!(err && text.contains("not found"), "{text}");
+}
+
+/// A 1x1 PNG.
+const PNG: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+    0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xF0,
+    0x1F, 0x00, 0x05, 0x00, 0x01, 0xFF, 0x89, 0x99, 0x3D, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+    0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+];
+
+#[tokio::test]
+async fn small_images_come_back_as_image_content() {
+    let s = start(|c| c).await;
+    fs::write(s.path("pixel.png"), PNG).unwrap();
+    let v = rpc(
+        &s.base,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name":"read","arguments":{"path":"pixel.png"}}}),
+    )
+    .await;
+    let content = v["result"]["content"].as_array().unwrap();
+    let image = content
+        .iter()
+        .find(|c| c["type"] == "image")
+        .unwrap_or_else(|| panic!("no image block: {v}"));
+    assert_eq!(image["mimeType"], "image/png");
+    use base64::Engine;
+    let data = base64::engine::general_purpose::STANDARD
+        .decode(image["data"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(data, PNG);
+
+    let (_, text) = call(&s, "stat", json!({"path": "pixel.png"})).await;
+    assert_eq!(payload(&text)["image"], "image/png");
+
+    // Over the byte limit: reported like any binary file, not returned.
+    let small = start(|mut c| {
+        c.max_file_bytes = 32;
+        c
+    })
+    .await;
+    fs::write(small.path("pixel.png"), PNG).unwrap();
+    let (err, text) = call(
+        &small,
+        "read",
+        json!({"path": "pixel.png", "start_line": 1}),
+    )
+    .await;
+    assert!(!err && payload(&text)["binary"] == true, "{text}");
+}
+
+#[tokio::test]
+async fn read_stops_at_the_character_limit_on_a_line_boundary() {
+    let s = start(|c| c.max_chars(12)).await;
+    let (err, text) = call(&s, "read", json!({"path": "a.txt"})).await;
+    assert!(!err, "{text}");
+    assert!(text.contains("a.txt lines 1-2 of ?"), "{text}");
+    assert!(text.contains("continue with start_line 3"), "{text}");
+    assert!(
+        text.contains("alpha\nbeta\n") && !text.contains("gamma"),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn foreign_origin_is_refused_when_origins_are_configured() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let base = serve(Config::new(root.path()), |o| {
+        o.with_allowed_origins(["https://app.example.com"])
+    })
+    .await;
+    let send = |origin: &'static str| {
+        reqwest::Client::new()
+            .post(format!("{base}/mcp"))
+            .header("Origin", origin)
+            .header("Accept", "application/json, text/event-stream")
+            .header("MCP-Protocol-Version", "2025-06-18")
+            .json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))
+            .send()
+    };
+    assert!(
+        send("https://evil.example")
+            .await
+            .unwrap()
+            .status()
+            .is_client_error()
+    );
+    assert!(
+        send("https://app.example.com")
+            .await
+            .unwrap()
+            .status()
+            .is_success()
+    );
+}
+
+/// Two named roots side by side.
+async fn start_two_roots(writable: bool) -> (String, TempDir, TempDir) {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    fs::write(a.path().join("notes.md"), "alpha notes\n").unwrap();
+    fs::create_dir_all(b.path().join("src")).unwrap();
+    fs::write(b.path().join("src/lib.rs"), "// alpha code\n").unwrap();
+    let config = Config::with_roots(vec![])
+        .root("docs", a.path())
+        .root("code", b.path())
+        .writable(writable);
+    let base = serve(config, |o| o).await;
+    (base, a, b)
+}
+
+#[tokio::test]
+async fn several_roots_are_addressed_by_name() {
+    let (base, a, b) = start_two_roots(true).await;
+
+    let (_, text) = call_at(&base, "list", json!({})).await;
+    assert_eq!(paths(&payload(&text), "entries"), ["docs", "code"]);
+
+    let (_, text) = call_at(&base, "list", json!({"path": "code", "recursive": true})).await;
+    assert_eq!(
+        paths(&payload(&text), "entries"),
+        ["code/src", "code/src/lib.rs"]
+    );
+
+    let (err, text) = call_at(&base, "read", json!({"path": "docs/notes.md"})).await;
+    assert!(
+        !err && text.contains("docs/notes.md lines 1-1 of 1"),
+        "{text}"
+    );
+
+    let (_, text) = call_at(&base, "search", json!({"pattern": "alpha"})).await;
+    assert_eq!(
+        paths(&payload(&text), "matches"),
+        ["docs/notes.md", "code/src/lib.rs"]
+    );
+
+    let (_, text) = call_at(&base, "stat", json!({"path": "."})).await;
+    assert_eq!(payload(&text)["roots"], json!(["docs", "code"]));
+
+    let (err, text) = call_at(&base, "read", json!({"path": "notes.md"})).await;
+    assert!(err && text.contains("no root named notes.md"), "{text}");
+    let (err, text) = call_at(&base, "read", json!({"path": "docs"})).await;
+    assert!(err && text.contains("is a root folder"), "{text}");
+
+    let (err, text) = call_at(
+        &base,
+        "move",
+        json!({"from": "docs/notes.md", "to": "code/notes.md"}),
+    )
+    .await;
+    assert!(!err, "{text}");
+    assert!(!a.path().join("notes.md").exists());
+    assert!(b.path().join("notes.md").exists());
+
+    let (err, text) = call_at(
+        &base,
+        "write",
+        json!({"path": "docs/new.txt", "content": "hi"}),
+    )
+    .await;
+    assert!(!err, "{text}");
+    assert_eq!(fs::read_to_string(a.path().join("new.txt")).unwrap(), "hi");
+}
+
+#[tokio::test]
+async fn escapes_across_roots_are_refused() {
+    let (base, a, b) = start_two_roots(true).await;
+    for (tool, args) in [
+        ("read", json!({"path": "docs/../code/src/lib.rs"})),
+        ("read", json!({"path": "../code/src/lib.rs"})),
+        ("list", json!({"path": "code/.."})),
+        (
+            "write",
+            json!({"path": "docs/../../planted.txt", "content": "x"}),
+        ),
+        (
+            "move",
+            json!({"from": "docs/notes.md", "to": "code/../../notes.md"}),
+        ),
+        ("search", json!({"pattern": "x", "path": "/"})),
+        ("stat", json!({"path": "code/../docs"})),
+    ] {
+        let (err, text) = call_at(&base, tool, args.clone()).await;
+        assert!(err, "{tool} {args} must be refused: {text}");
+        assert!(
+            text.contains("leaves the root folder") || text.contains("absolute paths"),
+            "{tool} {args}: {text}"
+        );
+    }
+    assert!(a.path().join("notes.md").exists());
+
+    #[cfg(unix)]
+    {
+        // A link from one root into the other is still a link out of its root.
+        std::os::unix::fs::symlink(b.path().join("src"), a.path().join("into-code")).unwrap();
+        for (tool, args) in [
+            ("read", json!({"path": "docs/into-code/lib.rs"})),
+            ("list", json!({"path": "docs/into-code"})),
+            (
+                "write",
+                json!({"path": "docs/into-code/planted.rs", "content": "x"}),
+            ),
+        ] {
+            let (err, text) = call_at(&base, tool, args.clone()).await;
+            assert!(
+                err && text.contains("leaves the root folder"),
+                "{tool} {args}: {text}"
+            );
+        }
+        assert!(!b.path().join("src/planted.rs").exists());
+    }
 }
 
 #[tokio::test]
@@ -467,6 +803,14 @@ async fn escapes_are_refused_by_every_tool() {
         ("search", json!({"pattern": "x", "path": ".."})),
         ("write", json!({"path": "../planted.txt", "content": "x"})),
         ("write", json!({"path": "/tmp/planted.txt", "content": "x"})),
+        (
+            "edit",
+            json!({"path": "../a.txt", "old_text": "a", "new_text": "b"}),
+        ),
+        (
+            "edit",
+            json!({"path": "/etc/hosts", "old_text": "a", "new_text": "b"}),
+        ),
         ("move", json!({"from": "a.txt", "to": "../a.txt"})),
         ("move", json!({"from": "/etc/hosts", "to": "hosts"})),
         ("stat", json!({"path": ".."})),
@@ -515,6 +859,10 @@ async fn symlinks_pointing_outside_are_refused() {
             json!({"path": "file-link", "content": "x", "mode": "overwrite"}),
         ),
         ("move", json!({"from": "a.txt", "to": "dir-link/a.txt"})),
+        (
+            "edit",
+            json!({"path": "file-link", "old_text": "SECRET", "new_text": "x"}),
+        ),
     ] {
         let (err, text) = call(&s, tool, args.clone()).await;
         assert!(err, "{tool} {args} must be refused: {text}");
