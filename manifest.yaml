@@ -1,0 +1,54 @@
+name: emperor-folder
+type: server
+about:
+  title: Folder
+  description: List, read, search, write, move and stat files inside one root folder, never outside it.
+meta:
+  category: files
+  tags: [files, folder, filesystem, search, sandbox]
+endpoint: http://127.0.0.1:8031/mcp
+topology: local-config
+tools:
+  - name: list
+    description: List files and directories in a folder (root-relative), honouring .gitignore and hidden files; optional glob and recursion.
+  - name: read
+    description: Read a text file, optionally a 1-based inclusive line range; binary files are reported, not returned.
+  - name: search
+    description: Search text files for a regular expression; returns path, line number and line for each match.
+  - name: write
+    description: Write text to a file in create, overwrite or append mode; creates parent directories. Needs --writable.
+  - name: move
+    description: Move or rename a file or directory inside the root; refuses to replace a target unless overwrite is true. Needs --writable.
+  - name: stat
+    description: Kind, size, modified time and, for text files, line count of a path.
+config:
+  parameters:
+    type: object
+    required: [root]
+    properties:
+      root:
+        type: string
+        ui:
+          label: Root folder
+          hint: The only folder the server can see (--root).
+      writable:
+        type: boolean
+        default: false
+        ui:
+          label: Allow writes
+          hint: Enables the write and move tools (--writable).
+      max_file_bytes:
+        type: integer
+        default: 1048576
+        ui:
+          label: Max file size (bytes)
+          hint: Largest file read, searched or written (--max-file-bytes).
+      max_results:
+        type: integer
+        default: 200
+        ui:
+          label: Max results
+          hint: Most entries list returns and matches search returns (--max-results).
+test_tool:
+  name: list
+  args: {}
