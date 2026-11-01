@@ -28,7 +28,10 @@ file by absolute path.
 
 It is built on [emperor-mcp](https://github.com/yarenty/emperor-mcp): stateless Streamable HTTP
 (no session id, load-balancer friendly), output framed so file content reaches the model as
-data rather than instructions, and a `doctor` subcommand.
+data rather than instructions, and a `doctor` subcommand. It follows
+[Emperor Profile P1.1](https://github.com/yarenty/emperor-mcp/blob/main/PROFILE.md): no write
+tool is offered unless the operator switches writing on at start-up, and tool definitions are
+lean (short descriptions, compact input schemas), so every request carries less of them.
 
 ## Install
 
@@ -193,8 +196,9 @@ What it **cannot** do:
   a directory swapped for an escaping link mid-walk is skipped, not read.
 - **Write by default.** The server starts read-only: `write`, `edit` and `move` are removed
   from the tool list, and the file operations refuse writes as well, until the operator passes
-  `--writable`. Tool annotations (`readOnlyHint`, `destructiveHint`) tell clients which tools
-  change files, so they can ask before running them.
+  `--writable` (or sets `FOLDER_WRITABLE`), as Emperor Profile P1.1 requires. Tool
+  annotations (`readOnlyHint`, `destructiveHint`) tell clients which tools change files, so
+  they can ask before running them.
 - **Exhaust the host or the context.** Whole-file reads stop at `--max-file-bytes` (line-range
   reads stream and return at most that much) and at `--max-chars` characters, `search` skips
   larger files, `list` and `search` stop at `--max-results`, binary files other than small
@@ -215,7 +219,7 @@ because every operation re-resolves beneath the root.
 
 ```
 $ emperor-folder doctor --root ~/notes --writable
-emperor-folder 0.1.2 doctor
+emperor-folder 0.1.3 doctor
   [ok  ] dir /Users/me/notes  readable (42 entries)
   [ok  ] dir /Users/me/notes  writable
   [ok  ] write access         on: write, edit and move are offered

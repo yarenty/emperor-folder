@@ -7,6 +7,7 @@ use clap::{ArgAction, Args, Parser, Subcommand};
 use emperor_folder::{
     Config, Folder, RootSpec, ServeOptions, default_allowed_hosts, doctor, serve_http, serve_stdio,
 };
+use emperor_mcp::cli::parse_switch;
 
 #[derive(Parser)]
 #[command(
@@ -127,17 +128,6 @@ fn main() -> anyhow::Result<()> {
                 }
             })
         }
-    }
-}
-
-/// An on/off switch from the environment. Empty is off, so a catalog that passes an unset
-/// parameter as `FOLDER_WRITABLE=` stays read-only; anything unrecognised is refused rather
-/// than read as on.
-fn parse_switch(value: &str) -> Result<bool, String> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "" | "false" | "0" | "no" | "off" | "n" | "f" => Ok(false),
-        "true" | "1" | "yes" | "on" | "y" | "t" => Ok(true),
-        other => Err(format!("expected true/false, 1/0 or yes/no, got {other:?}")),
     }
 }
 

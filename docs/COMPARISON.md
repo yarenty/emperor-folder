@@ -1,6 +1,6 @@
 # emperor-folder next to other folder-access MCP servers
 
-How emperor-folder 0.1.1 compares with the most popular public MCP servers that give a model
+How emperor-folder 0.1.3 compares with the most popular public MCP servers that give a model
 access to files. For the shared background (the 2026-07-28 spec revision, annotations,
 EscapeRoute, the "lethal trifecta") and what every emperor server gets from the framework, see
 [the emperor-mcp comparison](https://github.com/yarenty/emperor-mcp/blob/main/docs/COMPARISON.md).

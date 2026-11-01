@@ -1,6 +1,6 @@
 [package]
 name = "emperor-folder"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 rust-version = "1.88"
 description = "MCP server confined to one folder: list, read, search, stat, write, edit and move files, never outside the root"
@@ -22,7 +22,7 @@ name = "emperor-folder"
 path = "src/main.rs"
 
 [dependencies]
-emperor-mcp = "0.3"
+emperor-mcp = { version = "0.4", features = ["cli"] }
 rmcp = { version = "3.8", features = ["server", "macros", "transport-io"] }
 
 # Confinement, walking, matching
@@ -43,6 +43,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
-emperor-mcp = { version = "0.3", features = ["testkit"] }
+emperor-mcp = { version = "0.4", features = ["cli", "testkit"] }
 reqwest = { version = "0.13", features = ["json"] }
 tempfile = "3"

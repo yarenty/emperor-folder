@@ -13,6 +13,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use base64::Engine;
+use emperor_mcp::schema::CompactSchemas;
 use emperor_mcp::{FrameKind, ServeOptions, frame};
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
@@ -142,9 +143,9 @@ impl FolderServer {
         }
     }
 
-    /// The tool router for a writable or read-only server.
+    /// The tool router for a writable or read-only server, with compact input schemas.
     pub fn router(writable: bool) -> ToolRouter<Self> {
-        let mut router = Self::tool_router();
+        let mut router = Self::tool_router().compact_schemas();
         if !writable {
             for name in WRITE_TOOLS {
                 router.remove_route(name);
@@ -424,8 +425,19 @@ mod tests {
 
     #[test]
     fn tools_conform_in_both_modes() {
-        emperor_mcp::testkit::assert_tools(&FolderServer::router(true).list_all());
-        emperor_mcp::testkit::assert_tools(&FolderServer::router(false).list_all());
+        use emperor_mcp::testkit;
+        let writable = FolderServer::router(true).list_all();
+        let read_only = FolderServer::router(false).list_all();
+        for tools in [&writable, &read_only] {
+            testkit::assert_tools(tools);
+            testkit::assert_compact_schemas(tools);
+            assert!(
+                testkit::warnings(tools).is_empty(),
+                "{:?}",
+                testkit::warnings(tools)
+            );
+        }
+        testkit::assert_read_only_default(&read_only);
     }
 
     #[test]
