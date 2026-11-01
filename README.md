@@ -40,7 +40,15 @@ check a download with `sha256sum -c SHA256SUMS --ignore-missing` and
 `gh attestation verify <file> --repo yarenty/emperor-folder`. From source (Rust 1.88 or newer):
 
 ```bash
-cargo install --git https://github.com/yarenty/emperor-folder
+cargo install emperor-folder
+```
+
+Or as a container (stdio, the folder mounted at `/data`, read-only unless you add `--writable`):
+
+```bash
+docker build -t emperor-folder https://github.com/yarenty/emperor-folder.git
+docker run -i --rm -v ~/notes:/data emperor-folder                            # read-only
+docker run -i --rm -v ~/notes:/data emperor-folder --root /data --writable    # also write, edit, move
 ```
 
 ## Run
@@ -206,7 +214,7 @@ because every operation re-resolves beneath the root.
 
 ```
 $ emperor-folder doctor --root ~/notes --writable
-emperor-folder 0.1.0 doctor
+emperor-folder 0.1.1 doctor
   [ok  ] dir /Users/me/notes  readable (42 entries)
   [ok  ] dir /Users/me/notes  writable
   [ok  ] roots                notes = /Users/me/notes
@@ -230,6 +238,12 @@ cargo clippy --all-targets -- -D warnings
 cargo test          # unit tests + every tool over real HTTP and stdio, escape attempts included
 cargo deny check
 ```
+
+## Links
+
+- Crate: [crates.io/crates/emperor-folder](https://crates.io/crates/emperor-folder), API docs on [docs.rs](https://docs.rs/emperor-folder)
+- Framework: [emperor-mcp](https://github.com/yarenty/emperor-mcp)
+- Official [MCP Registry](https://registry.modelcontextprotocol.io/) entry, mcp-name: io.github.yarenty/emperor-folder
 
 ## Contributing
 
