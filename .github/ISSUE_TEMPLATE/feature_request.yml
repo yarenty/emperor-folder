@@ -1,0 +1,23 @@
+name: Feature request
+description: A capability the server should have.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you need
+      description: The task you are trying to do and why the current tools do not cover it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: >-
+        How it could work. The server keeps at most 8 tools, so a new argument on an existing
+        tool is preferred to a new tool.
+  - type: textarea
+    id: security
+    attributes:
+      label: Effect on confinement
+      description: Does it touch paths, links, or writing? How does it stay inside the roots?

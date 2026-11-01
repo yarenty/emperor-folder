@@ -1,0 +1,36 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The command line (flags included), the tool call and its arguments, and the reply.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and platform
+      placeholder: emperor-folder 0.1.0, macOS 15 arm64
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: emperor-folder doctor output
+      render: text
+  - type: markdown
+    attributes:
+      value: >-
+        A way to read or write outside the root is a security issue: report it privately
+        through GitHub's "Report a vulnerability" on the Security tab, not here.
