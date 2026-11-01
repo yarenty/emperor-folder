@@ -1,6 +1,6 @@
 # emperor-folder — AI agent notes
 
-**Crate**: `emperor-folder` · **Version**: 0.1.0 · **Licence**: MIT OR Apache-2.0 · **Rust**: 1.88+ (`rust-version` in `Cargo.toml`)
+**Crate**: `emperor-folder` · **Version**: 0.1.1 · **Licence**: MIT OR Apache-2.0 · **Rust**: 1.88+ (`rust-version` in `Cargo.toml`)
 
 ## Scope
 
@@ -95,3 +95,6 @@ model), **[`manifest.yaml`](./manifest.yaml)** when a tool or a flag changes, an
 - [`CHANGELOG.md`](./CHANGELOG.md) — what each release changed
 - [`manifest.yaml`](./manifest.yaml) — tools and settings for host applications
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md) — checks, DCO
+- [`server.json`](./server.json) — official MCP Registry entry; its two `version` fields follow
+  `Cargo.toml` on every release
+- [`Dockerfile`](./Dockerfile) — stdio image for container catalogs, folder mounted at `/data`

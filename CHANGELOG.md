@@ -4,6 +4,13 @@ All notable changes to emperor-folder. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-01
+
+### Added
+- `server.json` for the official MCP Registry (cargo package, stdio, `--root` and `--writable` described), and the registry's `mcp-name` line in the README.
+- `Dockerfile` (multi-stage, non-root, OCI labels) running `serve --stdio` on a folder mounted at `/data`, read-only by default; README shows how to build and run it.
+- README "Links" section; install from crates.io with `cargo install emperor-folder`.
+
 ## [0.1.0] - 2026-11-01
 
 > One folder, nothing else.
@@ -24,5 +31,6 @@ All notable changes to emperor-folder. The format follows [Keep a Changelog](htt
 - Release binaries for four targets, with a `SHA256SUMS` file and build provenance attestations.
 - Issue templates (bug, feature) and a pull request template.
 
-[Unreleased]: https://github.com/yarenty/emperor-folder/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/yarenty/emperor-folder/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/yarenty/emperor-folder/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/yarenty/emperor-folder/releases/tag/v0.1.0
