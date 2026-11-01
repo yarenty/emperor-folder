@@ -3,7 +3,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgAction, Args, Parser, Subcommand};
 use emperor_folder::{
     Config, Folder, RootSpec, ServeOptions, default_allowed_hosts, doctor, serve_http, serve_stdio,
 };
@@ -37,7 +37,13 @@ struct Opts {
     #[arg(long, default_value = "127.0.0.1:8031")]
     bind: SocketAddr,
     /// Offer the write, edit and move tools (default: read-only, they are not listed).
-    #[arg(long)]
+    /// FOLDER_WRITABLE=true|1|yes turns it on; unset, empty, false, 0 or no leave it off.
+    #[arg(
+        long,
+        env = "FOLDER_WRITABLE",
+        action = ArgAction::SetTrue,
+        value_parser = parse_switch,
+    )]
     writable: bool,
     /// Speak MCP over stdin/stdout instead of HTTP (desktop clients).
     #[arg(long)]
@@ -93,7 +99,17 @@ fn main() -> anyhow::Result<()> {
             for (name, path) in folder.roots() {
                 tracing::info!(root = %path.display(), name, "root folder");
             }
-            tracing::info!(writable = opts.writable, "emperor-folder starting");
+            if opts.writable {
+                tracing::info!(
+                    writable = true,
+                    "emperor-folder starting: writing on, write, edit and move offered"
+                );
+            } else {
+                tracing::info!(
+                    writable = false,
+                    "emperor-folder starting: read-only, write, edit and move not offered"
+                );
+            }
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(async move {
                 if opts.stdio {
@@ -114,6 +130,17 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
+/// An on/off switch from the environment. Empty is off, so a catalog that passes an unset
+/// parameter as `FOLDER_WRITABLE=` stays read-only; anything unrecognised is refused rather
+/// than read as on.
+fn parse_switch(value: &str) -> Result<bool, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "false" | "0" | "no" | "off" | "n" | "f" => Ok(false),
+        "true" | "1" | "yes" | "on" | "y" | "t" => Ok(true),
+        other => Err(format!("expected true/false, 1/0 or yes/no, got {other:?}")),
+    }
+}
+
 /// Logs to stderr in both modes: in stdio mode stdout is the protocol stream.
 fn init_tracing() {
     use tracing_subscriber::{EnvFilter, fmt};
@@ -121,4 +148,46 @@ fn init_tracing() {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .with_writer(std::io::stderr)
         .try_init();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn writable(args: &[&str], env: Option<&str>) -> Result<bool, clap::Error> {
+        // Only this test touches FOLDER_WRITABLE, and it runs the cases one after another.
+        // SAFETY: no other thread in this test binary reads or writes the environment.
+        unsafe {
+            match env {
+                Some(v) => std::env::set_var("FOLDER_WRITABLE", v),
+                None => std::env::remove_var("FOLDER_WRITABLE"),
+            }
+        }
+        let mut argv = vec!["emperor-folder", "serve", "--root", "/data"];
+        argv.extend_from_slice(args);
+        Cli::try_parse_from(argv).map(|cli| match cli.command {
+            Command::Serve(opts) | Command::Doctor(opts) => opts.writable,
+        })
+    }
+
+    #[test]
+    fn writable_from_flag_and_environment() {
+        assert!(!writable(&[], None).unwrap(), "unset is off");
+        assert!(writable(&["--writable"], None).unwrap(), "flag is on");
+        for off in ["", "false", "0", "no", "FALSE", "No"] {
+            assert!(!writable(&[], Some(off)).unwrap(), "{off:?} is off");
+        }
+        for on in ["true", "1", "yes", "TRUE", "Yes"] {
+            assert!(writable(&[], Some(on)).unwrap(), "{on:?} is on");
+        }
+        assert!(
+            writable(&["--writable"], Some("false")).unwrap(),
+            "the flag wins over the environment"
+        );
+        assert!(
+            writable(&[], Some("maybe")).is_err(),
+            "other values are refused"
+        );
+        writable(&[], None).unwrap();
+    }
 }

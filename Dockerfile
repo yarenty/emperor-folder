@@ -3,6 +3,7 @@
 #   docker build -t emperor-folder .
 #   docker run -i --rm -v "$PWD:/data" emperor-folder                 # read-only
 #   docker run -i --rm -v "$PWD:/data" emperor-folder --root /data --writable
+#   docker run -i --rm -v "$PWD:/data" -e FOLDER_WRITABLE=true emperor-folder   # the same
 
 FROM rust:1.88-slim-bookworm AS build
 WORKDIR /src

@@ -21,12 +21,14 @@ pub fn report(config: &Config, bind: Option<SocketAddr>) -> Report {
             report.push(dir_writable(&spec.path));
         }
     }
-    if !config.writable {
-        report.push(Check::pass(
-            "write access",
-            "read-only: write, edit and move are not offered (--writable enables them)",
-        ));
-    }
+    report.push(Check::pass(
+        "write access",
+        if config.writable {
+            "on: write, edit and move are offered"
+        } else {
+            "read-only: write, edit and move are not offered (--writable or FOLDER_WRITABLE=true enables them)"
+        },
+    ));
 
     let folder = match Folder::open(config.clone()) {
         Ok(f) => {

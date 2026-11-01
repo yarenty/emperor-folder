@@ -38,7 +38,7 @@ config:
         default: false
         ui:
           label: Allow writes
-          hint: Offers the write, edit and move tools (--writable).
+          hint: Offers the write, edit and move tools (--writable, or FOLDER_WRITABLE=true).
       max_file_bytes:
         type: integer
         default: 1048576
