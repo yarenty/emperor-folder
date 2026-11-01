@@ -243,6 +243,7 @@ cargo deny check
 
 - Crate: [crates.io/crates/emperor-folder](https://crates.io/crates/emperor-folder), API docs on [docs.rs](https://docs.rs/emperor-folder)
 - Framework: [emperor-mcp](https://github.com/yarenty/emperor-mcp)
+- How it compares with other folder-access MCP servers: [docs/COMPARISON.md](docs/COMPARISON.md)
 - Official [MCP Registry](https://registry.modelcontextprotocol.io/) entry, mcp-name: io.github.yarenty/emperor-folder
 
 ## Contributing
