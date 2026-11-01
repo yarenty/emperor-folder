@@ -22,8 +22,7 @@ name = "emperor-folder"
 path = "src/main.rs"
 
 [dependencies]
-# switch to version = "0.2" once published
-emperor-mcp = { git = "https://github.com/yarenty/emperor-mcp", branch = "chore/rmcp-3" }
+emperor-mcp = "0.2"
 rmcp = { version = "3.8", features = ["server", "macros", "transport-io"] }
 
 # Confinement, walking, matching

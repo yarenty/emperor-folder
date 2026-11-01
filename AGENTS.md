@@ -59,9 +59,7 @@ Layout (one package, library + binary):
   `regex` (rust-lang), `clap`, `tokio`, `serde`, `thiserror`/`anyhow`, `tracing`. A new
   dependency needs a reason written here. `tracing-subscriber` is used directly (not
   `emperor_mcp::init_tracing`) because logs must go to stderr in stdio mode.
-- **emperor-mcp from git until 0.2 is on crates.io.** `Cargo.toml` names the branch and
-  `deny.toml` allows that one git source; switch both to `version = "0.2"` when it is
-  published (crates.io refuses git dependencies, so publishing this crate waits for that).
+- **emperor-mcp from crates.io** (`0.2`); `deny.toml` allows no git sources.
 - **CLI flags are a public contract.** Changing or removing one is a breaking change.
 - Licence is dual `MIT OR Apache-2.0`; keep `Cargo.toml`, the README badge and the README
   licence section in agreement. Contributions are signed off (DCO, see `CONTRIBUTING.md`).
