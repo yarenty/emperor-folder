@@ -144,6 +144,8 @@ async fn read_only_server_lists_four_tools_writable_seven() {
     let (v, names) = tool_names(&s.base).await;
     assert_eq!(names, ["list", "read", "search", "stat"], "{v}");
     emperor_mcp::testkit::assert_tools_json(&v);
+    emperor_mcp::testkit::assert_read_only_default_json(&v);
+    emperor_mcp::testkit::assert_compact_schemas_json(&v);
 
     let w = start(|c| c.writable(true)).await;
     let (v, names) = tool_names(&w.base).await;
@@ -153,6 +155,7 @@ async fn read_only_server_lists_four_tools_writable_seven() {
         "{v}"
     );
     emperor_mcp::testkit::assert_tools_json(&v);
+    emperor_mcp::testkit::assert_compact_schemas_json(&v);
 }
 
 #[tokio::test]

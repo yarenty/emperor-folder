@@ -1,6 +1,6 @@
 # emperor-folder — AI agent notes
 
-**Crate**: `emperor-folder` · **Version**: 0.1.2 · **Licence**: MIT OR Apache-2.0 · **Rust**: 1.88+ (`rust-version` in `Cargo.toml`)
+**Crate**: `emperor-folder` · **Version**: 0.1.3 · **Licence**: MIT OR Apache-2.0 · **Rust**: 1.88+ (`rust-version` in `Cargo.toml`)
 
 ## Scope
 
@@ -74,10 +74,15 @@ Layout (one package, library + binary):
 `tokio`, `serde`, `thiserror`/`anyhow`, `tracing`. A new
   dependency needs a reason written here. `tracing-subscriber` is used directly (not
   `emperor_mcp::init_tracing`) because logs must go to stderr in stdio mode.
-- **emperor-mcp from crates.io** (`0.3`; `testkit` feature in dev-dependencies);
-  `deny.toml` allows no git sources. The CLI keeps its own transport flags rather than
+- **emperor-mcp from crates.io** (`0.4`, feature `cli`; `testkit` in dev-dependencies);
+  `deny.toml` allows no git sources. `--writable` / `FOLDER_WRITABLE` is read with
+  `emperor_mcp::cli::parse_switch`. The CLI keeps its own transport flags rather than
   flattening `emperor_mcp::cli::ServeArgs`, whose `--stdio` conflicts with `--bind` and
   `--allowed-host`, which this CLI has always accepted together.
+- **Lean definitions (Emperor Profile P1.1).** The router is built with
+  `.compact_schemas()`; tool descriptions stay under 300 characters and say what the tool does
+  and when to use it rather than another. `testkit::assert_compact_schemas` and
+  `assert_read_only_default` check both in `src/server.rs`.
 - **CLI flags are a public contract.** Changing or removing one is a breaking change.
 - Licence is dual `MIT OR Apache-2.0`; keep `Cargo.toml`, the README badge and the README
   licence section in agreement. Contributions are signed off (DCO, see `CONTRIBUTING.md`).

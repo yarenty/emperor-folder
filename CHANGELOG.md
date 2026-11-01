@@ -4,6 +4,13 @@ All notable changes to emperor-folder. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-01
+
+### Changed
+- emperor-mcp 0.4: the server follows Emperor Profile P1.1 (no write tool by default, lean tool definitions).
+- Smaller `tools/list`: input schemas are compacted (no `$schema` URI, no `null` alternative or `"default": null` on optional arguments, no Rust integer formats), so each request to the model carries less.
+- `--writable` / `FOLDER_WRITABLE` is read by emperor-mcp's shared switch parser; the accepted values are unchanged.
+
 ## [0.1.2] - 2026-11-01
 
 ### Added
@@ -42,6 +49,8 @@ All notable changes to emperor-folder. The format follows [Keep a Changelog](htt
 - Release binaries for four targets, with a `SHA256SUMS` file and build provenance attestations.
 - Issue templates (bug, feature) and a pull request template.
 
-[Unreleased]: https://github.com/yarenty/emperor-folder/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/yarenty/emperor-folder/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/yarenty/emperor-folder/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/yarenty/emperor-folder/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/yarenty/emperor-folder/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/yarenty/emperor-folder/releases/tag/v0.1.0

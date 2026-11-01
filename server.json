@@ -3,7 +3,7 @@
   "name": "io.github.yarenty/emperor-folder",
   "title": "emperor-folder",
   "description": "List, read, search and (opt-in) write, edit and move files inside one folder, never outside it.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "repository": {
     "url": "https://github.com/yarenty/emperor-folder",
     "source": "github"
@@ -13,7 +13,7 @@
     {
       "registryType": "cargo",
       "identifier": "emperor-folder",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "transport": {
         "type": "stdio"
       },
