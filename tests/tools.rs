@@ -767,6 +767,7 @@ async fn escapes_across_roots_are_refused() {
         );
     }
     assert!(a.path().join("notes.md").exists());
+    assert!(b.path().join("src/lib.rs").exists());
 
     #[cfg(unix)]
     {
