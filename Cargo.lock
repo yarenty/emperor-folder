@@ -484,6 +484,7 @@ name = "emperor-folder"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "cap-std",
  "clap",
  "emperor-mcp",
@@ -503,9 +504,9 @@ dependencies = [
 
 [[package]]
 name = "emperor-mcp"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa213f0ae3c284e2c43162712319bc1c7b061f087713d7eab0e7a1cc6c18e9d6"
+checksum = "aba426471f5da0f3ef59ea231c1cc43b2146482b9791d152a8ef839116d41b6c"
 dependencies = [
  "anyhow",
  "axum",

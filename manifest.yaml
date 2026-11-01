@@ -2,7 +2,7 @@ name: emperor-folder
 type: server
 about:
   title: Folder
-  description: List, read, search, write, move and stat files inside one root folder, never outside it.
+  description: List, read, search, stat, write, edit and move files inside one or more root folders, never outside them.
 meta:
   category: files
   tags: [files, folder, filesystem, search, sandbox]
@@ -10,17 +10,19 @@ endpoint: http://127.0.0.1:8031/mcp
 topology: local-config
 tools:
   - name: list
-    description: List files and directories in a folder (root-relative), honouring .gitignore and hidden files; optional glob and recursion.
+    description: List files and directories in a folder, honouring .gitignore and hidden files; optional glob and recursion.
   - name: read
-    description: Read a text file, optionally a 1-based inclusive line range; binary files are reported, not returned.
+    description: Read a text file, optionally a 1-based inclusive line range; small images come back as images, other binary files are reported, not returned.
   - name: search
     description: Search text files for a regular expression; returns path, line number and line for each match.
-  - name: write
-    description: Write text to a file in create, overwrite or append mode; creates parent directories. Needs --writable.
-  - name: move
-    description: Move or rename a file or directory inside the root; refuses to replace a target unless overwrite is true. Needs --writable.
   - name: stat
-    description: Kind, size, modified time and, for text files, line count of a path.
+    description: Kind, size, modified time and, for text files, line count of a path; image type for images.
+  - name: write
+    description: Write text to a file in create, overwrite or append mode; creates parent directories. Only offered with --writable.
+  - name: edit
+    description: Replace one exact text snippet in a file (or every occurrence with replace_all). Only offered with --writable.
+  - name: move
+    description: Move or rename a file or directory; refuses to replace a target unless overwrite is true. Only offered with --writable.
 config:
   parameters:
     type: object
@@ -30,13 +32,13 @@ config:
         type: string
         ui:
           label: Root folder
-          hint: The only folder the server can see (--root).
+          hint: The folder the server can see (--root; repeat as NAME=DIR for several).
       writable:
         type: boolean
         default: false
         ui:
           label: Allow writes
-          hint: Enables the write and move tools (--writable).
+          hint: Offers the write, edit and move tools (--writable).
       max_file_bytes:
         type: integer
         default: 1048576
@@ -49,6 +51,12 @@ config:
         ui:
           label: Max results
           hint: Most entries list returns and matches search returns (--max-results).
+      max_chars:
+        type: integer
+        default: 50000
+        ui:
+          label: Max characters per read
+          hint: Most characters of text one read returns (--max-chars).
 test_tool:
   name: list
   args: {}

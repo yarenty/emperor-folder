@@ -3,7 +3,7 @@ name = "emperor-folder"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-description = "MCP server confined to one folder: list, read, search, write, move and stat files, never outside the root"
+description = "MCP server confined to one folder: list, read, search, stat, write, edit and move files, never outside the root"
 license = "MIT OR Apache-2.0"
 authors = ["yarenty <yarenty@gmail.com>"]
 repository = "https://github.com/yarenty/emperor-folder"
@@ -22,7 +22,7 @@ name = "emperor-folder"
 path = "src/main.rs"
 
 [dependencies]
-emperor-mcp = "0.2"
+emperor-mcp = "0.3"
 rmcp = { version = "3.8", features = ["server", "macros", "transport-io"] }
 
 # Confinement, walking, matching
@@ -30,6 +30,8 @@ cap-std = "4"
 ignore = "0.4"
 globset = "0.4"
 regex = "1"
+# Image content for `read` (already in the tree through rmcp)
+base64 = "0.23"
 
 clap = { version = "4.5", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
@@ -41,5 +43,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
+emperor-mcp = { version = "0.3", features = ["testkit"] }
 reqwest = { version = "0.13", features = ["json"] }
 tempfile = "3"

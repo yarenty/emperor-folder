@@ -22,10 +22,10 @@ fn doctor_passes_on_a_good_root_and_fails_on_a_missing_one() {
     let out = String::from_utf8_lossy(&ok.stdout);
     assert!(ok.status.success(), "{out}");
     assert!(
-        out.contains("tool budget") && out.contains("6 of at most 8"),
+        out.contains("tool budget") && out.contains("7 of at most 8"),
         "{out}"
     );
-    assert!(out.contains("probe file created and removed"), "{out}");
+    assert!(out.contains("writable"), "{out}");
     assert!(out.contains("1 visible files"), "{out}");
     assert_eq!(
         std::fs::read_dir(root.path()).unwrap().count(),
@@ -39,7 +39,7 @@ fn doctor_passes_on_a_good_root_and_fails_on_a_missing_one() {
         .output()
         .unwrap();
     assert_eq!(missing.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&missing.stdout).contains("[FAIL] root folder"));
+    assert!(String::from_utf8_lossy(&missing.stdout).contains("[FAIL] dir "));
 }
 
 #[test]
@@ -110,8 +110,8 @@ fn serve_over_stdio_lists_tools_and_reads_a_file() {
     let list = reply(2);
     assert_eq!(
         list["result"]["tools"].as_array().unwrap().len(),
-        6,
-        "{list}"
+        4,
+        "read-only: write, edit and move are not listed: {list}"
     );
 
     send(json!({"jsonrpc":"2.0","id":3,"method":"tools/call",
