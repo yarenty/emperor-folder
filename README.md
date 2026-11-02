@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/yarenty/emperor-folder/actions/workflows/ci.yml/badge.svg)](https://github.com/yarenty/emperor-folder/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![Glama](https://glama.ai/mcp/servers/yarenty/emperor-folder/badges/score.svg)](https://glama.ai/mcp/servers/yarenty/emperor-folder)
 
 **An MCP server confined to one folder.** You name a directory (or a few); the model can
 list, read, search, and (if you allow it) write, edit and move files inside it, and cannot reach
